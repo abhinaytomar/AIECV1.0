@@ -67,7 +67,12 @@ You will compare embeddings for terms like:
 
 Why is cosine similarity useful for dense vector retrieval?
 
-##### ✅ Answer:
+##### ✅ Answer: 
+Cosine similarity is useful because it compares the direction of two embedding vectors rather than their raw magnitude. In an embedding space, that direction can act as a useful signal for semantic similarity. By dividing the dot product by each vector's length, cosine similarity normalizes the comparison so one vector does not look more similar simply because it has a larger magnitude.
+
+This makes cosine similarity useful for retrieval because the scores are comparable and easy to rank. In my run, this showed up clearly: `"king"` and `"queen"` scored `0.591`, while `"king"` and `"banana"` scored only `0.310`. Similarly, `"cat"` and `"cat health guidelines"` scored `0.496`, compared with `0.356` for `"cat"` and `"veterinarian"`. The more related pairs landed closer together, which is what I would expect from a semantic embedding model.
+
+Vector databases like Qdrant use similarity measures such as cosine similarity to find the nearest chunk vectors to a query vector at scale. The caveat is that the score is a ranking signal, not absolute proof of meaning or correctness. Different embedding models can also produce different scores, so the score should be inspected along with the retrieved text.
 
 ---
 
@@ -87,12 +92,14 @@ Run the notebook sections that:
 Why is metadata important for a RAG application?
 
 ##### ✅ Answer:
+Metadata is important in a RAG application because it gives each retrieved chunk context beyond the raw text. In this notebook, metadata tells us the source file, page number, document type, and chunk location. That makes the system easier to debug, helps the model cite where an answer came from, and allows the application to filter or prioritize the right content. For the cat health guideline PDF, this is especially useful because recommendations depend on context such as life stage, section, and page. Embeddings help find semantically similar chunks, but metadata helps verify, cite, filter, and trust the retrieved information.
 
 #### ❓Question #3
 
 What tradeoff do we make when choosing chunk size and chunk overlap?
 
 ##### ✅ Answer:
+Using the Chunk Visualizer makes the tradeoff clear: smaller chunks create more focused pieces of text, which can improve retrieval precision, but they can also fragment the surrounding context. Larger chunks preserve more context, but they can mix multiple ideas together and add noise to retrieval. Overlap helps carry context across chunk boundaries, but too much overlap duplicates text, increases the number of embedded chunks, and adds cost. In my run, 22 pages became 135 chunks using a chunk size of 1000 and overlap of 200, which seems like a reasonable balance between focused retrieval and preserving enough surrounding context.
 
 #### ❓Question #4
 
@@ -100,7 +107,10 @@ What does a similarity score help you understand, and what does it not prove by 
 
 ##### ✅ Answer:
 
+A similarity score helps me understand how closely a retrieved chunk matches the meaning of the user's query compared with the other chunks. In this example, the top results with scores around 0.58–0.55 are all related to signs that may require veterinary attention, such as pain, anxiety, vomiting, diarrhea, changes in activity, nocturnal vocalization, mobility issues, and behavior changes. However, the score does not prove that the chunk is fully correct, complete, or sufficient to answer the question. It is only a ranking signal. I still need to inspect the retrieved text to make sure the context is relevant, grounded in the PDF, and not missing important information.
+
 ---
+
 
 ## 🏗️ Activity #3: Vibe Check Retrieval Quality
 
@@ -115,7 +125,11 @@ For the vibe check queries, did the retrieved context seem relevant before gener
 
 ##### ✅ Answer:
 
+Yes, the retrieved context seemed relevant before generation for the cat-health questions because those questions matched the topic of the PDF. For questions about preventive care, symptoms requiring veterinary attention, and feeding a healthy adult cat, the retrieved chunks contained related guideline content such as exam frequency, parasite prevention, appetite changes, vomiting, diarrhea, urination/thirst changes, behavior changes, mobility issues, nutrition, BCS/MCS, and energy requirements.
+For the unrelated tax question, the retrieved context was not sufficient because the PDF is about feline health, not taxes. The model correctly responded that it did not have enough information in the provided cat health guideline PDF. Overall, the retrieval looked relevant for questions covered by the document and appropriately insufficient for a question outside the document’s scope.
+
 ---
+
 
 ## 🏗️ Activity #4: Tune Retrieval
 
@@ -130,13 +144,14 @@ Document what changed and whether retrieval improved.
 
 ##### Settings Changed:
 
--
+- I tested two changes. First, chunk_size 1000 to 800 and chunk_overlap 200 to 150, rebuilding the splitter and vector store. Second, a more specific retrieval query using terminology closer to the source document, keeping the original chunking and k = 4.
+
 
 ##### Results:
 
-1.
-2.
-3.
+1. Baseline (1000/200, 135 chunks): for "What symptoms should make me call a veterinarian?", the top three scores were moderate at about 0.435, 0.404, and 0.400, and the chunks were relevant.
+2. Smaller chunks (800/150, 169 chunks): more chunks overall, but some were narrower and less self-contained, with no clear improvement in relevance.
+3. Query rewording (original vector store): the top three scores rose to 0.682, 0.664, and 0.653, the biggest improvement of the two changes. Conclusion: the original 1000/200 chunking was reasonable, and query wording had the largest positive impact.
 
 ---
 
