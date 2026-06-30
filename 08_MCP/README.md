@@ -155,7 +155,14 @@ Why is OAuth important for MCP servers, and what security considerations should 
 
 #### Answer
 
-_(insert your answer here)_
+OAuth matters here because the cat shop's MCP tools take real actions on a user's behalf. add_to_cart, remove_from_cart, and especially checkout change state. Once those tools are reachable by an AI client, the server has to answer two questions on every call: who is acting, and what are they allowed to do. OAuth solves this by letting a user grant the client a scoped, expiring access token through an explicit consent step, instead of sharing a password. The client gets the token, the tools use it to identify the user, and the user never hands credentials to the agent.
+
+Security considerations when exposing tools to AI clients:
+* Short lived tokens and revocation: access tokens expire (about 1 hour) and can be revoked, so a leaked or compromised client has limited blast radius.
+* Least privilege and scopes: mutating tools like checkout deserve tighter authorization than read only tools like list_products.
+* Audience binding (the confused deputy problem): the server should verify the token was actually issued for this server, not blindly accept any valid looking token.
+* The model is not a trust boundary: an AI client can be steered by prompt injection into calling tools, so safety has to come from authorization on the server, not from the model behaving.
+* Transport hygiene: use TLS and HTTPS in transit, and never log tokens.
 
 ### Question #2
 
@@ -163,11 +170,29 @@ What is Streamable HTTP transport in MCP, and why might you expose a server publ
 
 #### Answer
 
-_(insert your answer here)_
+MCP separates two things: the protocol (the JSON-RPC messages such as initialize, tools/list, and tools/call) and the transport (how those bytes actually move). Streamable HTTP is a transport that exposes a single HTTP endpoint, commonly /mcp. The client POSTs JSON-RPC messages over the network, and the server can stream responses back over a long lived connection. It replaced the older two endpoint HTTP plus SSE design.
+The contrast is stdio. With stdio the client launches the server as a local subprocess and talks to it over stdin and stdout. stdio assumes one user, same machine, implicitly trusted, so it usually needs no auth.
+You would expose a server publicly with OAuth instead of stdio when it needs to be reachable by remote clients or multiple users, for example a hosted or shared server, or reaching it through an ngrok tunnel. stdio cannot do that because it is local only. And the moment the server is network accessible, anonymous calls to mutating tools like checkout are unacceptable, so you add OAuth for authentication and authorization.
 
 ## Activity 1: Extend the MCP Server
 
-Add at least one new tool to the cat shop MCP server (e.g., `search_products`, `update_cart_quantity`, or `get_order_history`). Ensure the new tool integrates properly with the existing database and OAuth authentication. Demo the new tool through an MCP client and include it in your Loom video.
+Add at least one new tool to the cat shop MCP server (e.g., search_products, update_cart_quantity, or get_order_history). Ensure the new tool integrates properly with the existing database and OAuth authentication. Demo the new tool through an MCP client and include it in your Loom video.
+
+I added two new tools to app/tools.py, both registered on the shared mcp instance and backed by the existing catshop.db SQLite database.
+
+search_products(query)
+
+A read only tool that searches the catalog by keyword, matching product name, description, or category, case insensitive using COLLATE NOCASE. It reuses oauth_provider._get_db(), so it queries the same product table as list_products.
+
+Demo: search for salmon returns Salmon Treats.
+
+update_cart_quantity(product_id, quantity)
+
+A write tool that sets the exact quantity of an item already in the cart, where a quantity of 0 removes it. Like add_to_cart, it calls _get_username(), so it is gated by the same OAuth login and scoped to the authenticated user's cart.
+
+Demo: change product 1 to 5 in my cart updates the cart to quantity 5.
+
+Both tools appear in the client's loaded tool list and were demoed live in the Loom video.
 
 ## Advanced Activity: Build a Custom MCP Client
 

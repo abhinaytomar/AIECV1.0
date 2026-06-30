@@ -139,3 +139,53 @@ async def checkout() -> dict:
         "total": cart["total"],
         "message": f"Order {order_id} confirmed! Thanks {username}, your cats will love their new goodies!",
     }
+
+@mcp.tool()
+async def search_products(query: str) -> list[dict]:
+    """Search the cat shop catalog by keyword. Matches product name,
+    description, or category (case-insensitive)."""
+    db = await oauth_provider._get_db()
+    like = f"%{query.strip()}%"
+    cursor = await db.execute(
+        """SELECT id, name, description, price, category FROM products
+           WHERE name LIKE ? COLLATE NOCASE
+              OR description LIKE ? COLLATE NOCASE
+              OR category LIKE ? COLLATE NOCASE""",
+        (like, like, like),
+    )
+    rows = await cursor.fetchall()
+    return [
+        {"id": r[0], "name": r[1], "description": r[2], "price": r[3], "category": r[4]}
+        for r in rows
+    ]
+
+
+@mcp.tool()
+async def update_cart_quantity(product_id: int, quantity: int) -> dict:
+    """Set the exact quantity of a product already in your cart.
+    A quantity of 0 removes the item."""
+    username = await _get_username()
+    db = await oauth_provider._get_db()
+
+    cursor = await db.execute(
+        "SELECT quantity FROM cart_items WHERE username = ? AND product_id = ?",
+        (username, product_id),
+    )
+    existing = await cursor.fetchone()
+    if existing is None:
+        return {"error": "That product is not in your cart"}
+
+    if quantity <= 0:
+        await db.execute(
+            "DELETE FROM cart_items WHERE username = ? AND product_id = ?",
+            (username, product_id),
+        )
+        await db.commit()
+        return {"success": True, "message": "Item removed from cart"}
+
+    await db.execute(
+        "UPDATE cart_items SET quantity = ? WHERE username = ? AND product_id = ?",
+        (quantity, username, product_id),
+    )
+    await db.commit()
+    return {"success": True, "message": f"Updated quantity to {quantity}"}
